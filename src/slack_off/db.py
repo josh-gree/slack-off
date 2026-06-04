@@ -2,6 +2,8 @@ import os
 import sqlite3
 from typing import Optional
 
+from slack_off.workspace import Workspace
+
 
 def get_connection() -> sqlite3.Connection:
     path = os.environ.get("DB_PATH", "slack_off.db")
@@ -26,26 +28,32 @@ def init_db() -> None:
         """)
 
 
-def save_workspace(name: str, channel_id: str, created_by: str) -> None:
+def save_workspace(name: str, channel_id: str, created_by: str) -> Workspace:
     with get_connection() as conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO workspaces (name, channel_id, created_by) VALUES (?, ?, ?)",
             (name, channel_id, created_by),
         )
+        row = conn.execute(
+            "SELECT * FROM workspaces WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+    return Workspace.from_row(row)
 
 
-def get_workspace(name: str, created_by: str) -> Optional[sqlite3.Row]:
+def get_workspace(name: str, created_by: str) -> Optional[Workspace]:
     with get_connection() as conn:
-        return conn.execute(
+        row = conn.execute(
             "SELECT * FROM workspaces WHERE name = ? AND created_by = ?", (name, created_by)
         ).fetchone()
+    return Workspace.from_row(row) if row else None
 
 
-def list_workspaces(created_by: str) -> list[sqlite3.Row]:
+def list_workspaces(created_by: str) -> list[Workspace]:
     with get_connection() as conn:
-        return conn.execute(
+        rows = conn.execute(
             "SELECT * FROM workspaces WHERE created_by = ? AND is_active = 1", (created_by,)
         ).fetchall()
+    return [Workspace.from_row(row) for row in rows]
 
 
 def deactivate_workspace(name: str, created_by: str) -> None:

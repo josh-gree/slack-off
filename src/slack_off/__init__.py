@@ -5,7 +5,9 @@ from dotenv import load_dotenv
 from slack_bolt import App
 from slack_sdk.errors import SlackApiError
 
-from slack_off.db import deactivate_workspace, get_workspace, init_db, list_workspaces, save_workspace
+from slack_off import views
+from slack_off.db import init_db, list_workspaces
+from slack_off.operations import create_workspace, delete_workspace
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -16,53 +18,7 @@ app = App(token=os.environ["SLACK_BOT_TOKEN"], signing_secret=os.environ["SLACK_
 
 
 def _publish_home(client, user_id: str) -> None:
-    workspaces = list_workspaces(user_id)
-
-    blocks = [
-        {"type": "header", "text": {"type": "plain_text", "text": "Welcome to slack-off"}},
-        {"type": "divider"},
-    ]
-
-    if workspaces:
-        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "*Your workspaces*"}})
-        for w in workspaces:
-            blocks.append({
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*{w['name']}* — <#{w['channel_id']}>"},
-                "accessory": {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Delete"},
-                    "action_id": "delete_workspace",
-                    "value": w["name"],
-                    "style": "danger",
-                    "confirm": {
-                        "title": {"type": "plain_text", "text": "Delete workspace"},
-                        "text": {"type": "mrkdwn", "text": f"Are you sure you want to delete '{w['name']}'?"},
-                        "confirm": {"type": "plain_text", "text": "Delete"},
-                        "deny": {"type": "plain_text", "text": "Cancel"},
-                    },
-                },
-            })
-    else:
-        blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": "You have no active workspaces."},
-        })
-
-    blocks.extend([
-        {"type": "divider"},
-        {
-            "type": "actions",
-            "elements": [{
-                "type": "button",
-                "text": {"type": "plain_text", "text": "Create Workspace"},
-                "action_id": "open_create_modal",
-                "style": "primary",
-            }],
-        },
-    ])
-
-    client.views_publish(user_id=user_id, view={"type": "home", "blocks": blocks})
+    client.views_publish(user_id=user_id, view=views.home_view(list_workspaces(user_id)))
 
 
 @app.message()
@@ -79,26 +35,7 @@ def app_home_opened(client, event):
 @app.action("open_create_modal")
 def open_create_modal(ack, client, body):
     ack()
-    client.views_open(
-        trigger_id=body["trigger_id"],
-        view={
-            "type": "modal",
-            "callback_id": "create_workspace_modal",
-            "title": {"type": "plain_text", "text": "Create Workspace"},
-            "submit": {"type": "plain_text", "text": "Create"},
-            "close": {"type": "plain_text", "text": "Cancel"},
-            "blocks": [{
-                "type": "input",
-                "block_id": "workspace_name_block",
-                "label": {"type": "plain_text", "text": "Workspace name"},
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": "workspace_name",
-                    "placeholder": {"type": "plain_text", "text": "my-project"},
-                },
-            }],
-        },
-    )
+    client.views_open(trigger_id=body["trigger_id"], view=views.create_modal_view())
 
 
 @app.view("create_workspace_modal")
@@ -118,30 +55,13 @@ def handle_create_workspace_modal(ack, body, client):
     _publish_home(client, user_id)
 
 
-def _delete_workspace(client, workspace_name: str, user_id: str) -> bool:
-    workspace = get_workspace(workspace_name, user_id)
-    if not workspace or not workspace["is_active"]:
-        return False
-    client.conversations_archive(channel=workspace["channel_id"])
-    deactivate_workspace(workspace_name, user_id)
-    return True
-
-
 @app.action("delete_workspace")
 def handle_delete_workspace(ack, body, client):
     ack()
     user_id = body["user"]["id"]
     workspace_name = body["actions"][0]["value"]
-    _delete_workspace(client, workspace_name, user_id)
+    delete_workspace(client, workspace_name, user_id)
     _publish_home(client, user_id)
-
-
-def create_workspace(client, workspace_name: str, user_id: str) -> str:
-    result = client.conversations_create(name=workspace_name, is_private=True)
-    channel_id = result["channel"]["id"]
-    client.conversations_invite(channel=channel_id, users=user_id)
-    save_workspace(workspace_name, channel_id, user_id)
-    return channel_id
 
 
 @app.command("/new")
@@ -158,8 +78,8 @@ def new_workspace(ack, respond, command, client):
         return
 
     try:
-        channel_id = create_workspace(client, workspace_name, command["user_id"])
-        respond(f"Created workspace <#{channel_id}> and added you to it.")
+        workspace = create_workspace(client, workspace_name, command["user_id"])
+        respond(f"Created workspace <#{workspace.channel_id}> and added you to it.")
     except SlackApiError as e:
         if e.response["error"] == "name_taken":
             respond(f"A workspace named '{workspace_name}' already exists.")
@@ -181,7 +101,7 @@ def list_workspaces_command(ack, respond, command):
         respond("You have no active workspaces.")
         return
 
-    lines = [f"- {w['name']} (<#{w['channel_id']}>)" for w in workspaces]
+    lines = [f"- {w.name} (<#{w.channel_id}>)" for w in workspaces]
     respond("\n".join(lines))
 
 
@@ -198,7 +118,7 @@ def delete_workspace_command(ack, respond, command, client):
         respond("Please provide a workspace name: '/delete <name>'")
         return
 
-    if not _delete_workspace(client, workspace_name, command["user_id"]):
+    if not delete_workspace(client, workspace_name, command["user_id"]):
         respond(f"No active workspace named '{workspace_name}' found.")
         return
 
