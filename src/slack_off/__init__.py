@@ -118,17 +118,21 @@ def handle_create_workspace_modal(ack, body, client):
     _publish_home(client, user_id)
 
 
+def _delete_workspace(client, workspace_name: str, user_id: str) -> bool:
+    workspace = get_workspace(workspace_name, user_id)
+    if not workspace or not workspace["is_active"]:
+        return False
+    client.conversations_archive(channel=workspace["channel_id"])
+    deactivate_workspace(workspace_name, user_id)
+    return True
+
+
 @app.action("delete_workspace")
 def handle_delete_workspace(ack, body, client):
     ack()
     user_id = body["user"]["id"]
     workspace_name = body["actions"][0]["value"]
-
-    workspace = get_workspace(workspace_name)
-    if workspace and workspace["is_active"]:
-        client.conversations_archive(channel=workspace["channel_id"])
-        deactivate_workspace(workspace_name)
-
+    _delete_workspace(client, workspace_name, user_id)
     _publish_home(client, user_id)
 
 
@@ -194,16 +198,8 @@ def delete_workspace_command(ack, respond, command, client):
         respond("Please provide a workspace name: '/delete <name>'")
         return
 
-    workspace = get_workspace(workspace_name)
-
-    if not workspace or not workspace["is_active"]:
+    if not _delete_workspace(client, workspace_name, command["user_id"]):
         respond(f"No active workspace named '{workspace_name}' found.")
         return
 
-    if workspace["created_by"] != command["user_id"]:
-        respond("You can only delete workspaces you created.")
-        return
-
-    client.conversations_archive(channel=workspace["channel_id"])
-    deactivate_workspace(workspace_name)
     respond(f"Workspace '{workspace_name}' has been deleted.")
