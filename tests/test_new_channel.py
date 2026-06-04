@@ -5,14 +5,14 @@ import pytest
 from dotenv import load_dotenv
 from slack_sdk import WebClient
 
-from slack_off import create_channel
+from slack_off import create_workspace
 
 load_dotenv()
 
 
 @pytest.fixture
 def bot():
-    """Client for the slack-off bot (creates channels)."""
+    """Client for the slack-off bot (creates workspaces)."""
     return WebClient(token=os.environ["SLACK_BOT_TOKEN"])
 
 
@@ -22,18 +22,18 @@ def test_client():
     return WebClient(token=os.environ["SLACK_TEST_TOKEN"])
 
 
-def test_create_channel(bot, test_client):
-    channel_name = f"test-{uuid.uuid4().hex[:8]}"
+def test_create_workspace(bot, test_client):
+    workspace_name = f"test-{uuid.uuid4().hex[:8]}"
     channel_id = None
 
     test_user_id = test_client.auth_test()["user_id"]
     bot_user_id = bot.auth_test()["user_id"]
 
     try:
-        channel_id = create_channel(bot, channel_name, test_user_id)
+        channel_id = create_workspace(bot, workspace_name, test_user_id)
 
         info = test_client.conversations_info(channel=channel_id)["channel"]
-        assert info["is_private"], "Channel should be private"
+        assert info["is_private"], "Workspace channel should be private"
 
         members = test_client.conversations_members(channel=channel_id)["members"]
         assert bot_user_id in members, "Bot should be a member"
