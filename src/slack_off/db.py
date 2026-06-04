@@ -38,3 +38,18 @@ def get_workspace(name: str) -> Optional[sqlite3.Row]:
         return conn.execute(
             "SELECT * FROM workspaces WHERE name = ?", (name,)
         ).fetchone()
+
+
+def list_workspaces(created_by: str) -> list[sqlite3.Row]:
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM workspaces WHERE created_by = ? AND is_active = 1", (created_by,)
+        ).fetchall()
+
+
+def deactivate_workspace(name: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE workspaces SET is_active = 0, modified_at = datetime('now') WHERE name = ?",
+            (name,),
+        )
