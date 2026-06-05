@@ -7,7 +7,13 @@ from slack_sdk.errors import SlackApiError
 
 from slack_off import views
 from slack_off.db import init_db, list_workspaces
-from slack_off.operations import create_workspace, delete_workspace
+from slack_off.operations import (
+    create_workspace,
+    delete_workspace,
+    get_workspace_sandbox_status,
+    pause_workspace_sandbox,
+    resume_workspace_sandbox,
+)
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -50,6 +56,10 @@ def handle_create_workspace_modal(ack, body, client):
             ack(response_action="errors", errors={"workspace_name_block": f"A workspace named '{workspace_name}' already exists."})
             return
         raise
+    except Exception:
+        logging.exception("Failed to create workspace '%s'", workspace_name)
+        ack(response_action="errors", errors={"workspace_name_block": "Could not create the workspace's sandbox. Please try again later."})
+        return
 
     ack()
     _publish_home(client, user_id)
@@ -85,6 +95,56 @@ def new_workspace(ack, respond, command, client):
             respond(f"A workspace named '{workspace_name}' already exists.")
         else:
             raise
+    except Exception:
+        logging.exception("Failed to create workspace '%s'", workspace_name)
+        respond("Could not create the workspace's sandbox. Please try again later.")
+
+
+_PAUSE_MESSAGES = {
+    "paused": "Sandbox paused.",
+    "not_a_workspace": "'/sandbox' can only be used from within a workspace channel.",
+    "not_owner": "Only the workspace owner can pause the sandbox.",
+    "no_sandbox": "This workspace has no sandbox.",
+}
+
+_RESUME_MESSAGES = {
+    "resumed": "Sandbox resumed.",
+    "not_a_workspace": "'/sandbox' can only be used from within a workspace channel.",
+    "not_owner": "Only the workspace owner can resume the sandbox.",
+    "no_sandbox": "This workspace has no sandbox.",
+}
+
+# Reason strings returned by status that are errors rather than a sandbox state.
+_STATUS_ERRORS = {
+    "not_a_workspace": "'/sandbox' can only be used from within a workspace channel.",
+    "not_owner": "Only the workspace owner can view the sandbox.",
+    "no_sandbox": "This workspace has no sandbox.",
+}
+
+_SANDBOX_USAGE = "Usage: '/sandbox pause', '/sandbox resume', or '/sandbox status'."
+
+
+@app.command("/sandbox")
+def sandbox_command(ack, respond, command):
+    ack()
+    channel_id = command["channel_id"]
+    user_id = command["user_id"]
+
+    parts = command["text"].strip().split()
+    action = parts[0].lower() if parts else ""
+
+    if action == "pause":
+        respond(_PAUSE_MESSAGES[pause_workspace_sandbox(channel_id, user_id)])
+    elif action == "resume":
+        respond(_RESUME_MESSAGES[resume_workspace_sandbox(channel_id, user_id)])
+    elif action == "status":
+        result = get_workspace_sandbox_status(channel_id, user_id)
+        if result in _STATUS_ERRORS:
+            respond(_STATUS_ERRORS[result])
+        else:
+            respond(f"Sandbox status: *{result}*.")
+    else:
+        respond(_SANDBOX_USAGE)
 
 
 @app.command("/list")
