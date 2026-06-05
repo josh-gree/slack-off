@@ -7,7 +7,12 @@ from slack_sdk.errors import SlackApiError
 
 from slack_off import views
 from slack_off.db import init_db, list_workspaces
-from slack_off.operations import create_workspace, delete_workspace
+from slack_off.operations import (
+    create_workspace,
+    delete_workspace,
+    pause_workspace_sandbox,
+    resume_workspace_sandbox,
+)
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -85,6 +90,35 @@ def new_workspace(ack, respond, command, client):
             respond(f"A workspace named '{workspace_name}' already exists.")
         else:
             raise
+
+
+_PAUSE_MESSAGES = {
+    "paused": "Sandbox paused.",
+    "not_a_workspace": "'/pause' can only be used from within a workspace channel.",
+    "not_owner": "Only the workspace owner can pause the sandbox.",
+    "no_sandbox": "This workspace has no sandbox.",
+}
+
+_RESUME_MESSAGES = {
+    "resumed": "Sandbox resumed.",
+    "not_a_workspace": "'/resume' can only be used from within a workspace channel.",
+    "not_owner": "Only the workspace owner can resume the sandbox.",
+    "no_sandbox": "This workspace has no sandbox.",
+}
+
+
+@app.command("/pause")
+def pause_sandbox_command(ack, respond, command):
+    ack()
+    result = pause_workspace_sandbox(command["channel_id"], command["user_id"])
+    respond(_PAUSE_MESSAGES[result])
+
+
+@app.command("/resume")
+def resume_sandbox_command(ack, respond, command):
+    ack()
+    result = resume_workspace_sandbox(command["channel_id"], command["user_id"])
+    respond(_RESUME_MESSAGES[result])
 
 
 @app.command("/list")
