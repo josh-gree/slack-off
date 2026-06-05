@@ -32,6 +32,39 @@ def test_delete_workspace_kills_sandbox(monkeypatch):
     assert killed == ["sbx_1"]
 
 
+def test_create_rolls_back_when_channel_creation_fails(monkeypatch):
+    monkeypatch.setattr(ops, "create_sandbox", lambda: "sbx_1")
+    killed = []
+    monkeypatch.setattr(ops, "kill_sandbox", lambda sid: killed.append(sid))
+
+    client = MagicMock()
+    client.conversations_create.side_effect = RuntimeError("name_taken")
+
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        ops.create_workspace(client, "proj", "U1")
+
+    # Sandbox created before the channel must be cleaned up.
+    assert killed == ["sbx_1"]
+
+
+def test_create_does_not_create_channel_when_sandbox_fails(monkeypatch):
+    def boom():
+        raise RuntimeError("no e2b api key")
+
+    monkeypatch.setattr(ops, "create_sandbox", boom)
+    client = MagicMock()
+
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        ops.create_workspace(client, "proj", "U1")
+
+    # No Slack channel should be created if the sandbox can't be provisioned.
+    client.conversations_create.assert_not_called()
+
+
 def test_pause_is_owner_only(monkeypatch):
     monkeypatch.setattr(ops, "create_sandbox", lambda: "sbx_1")
     paused = []

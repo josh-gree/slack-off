@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 from slack_off.db import (
@@ -17,13 +18,37 @@ from slack_off.sandbox import (
 )
 from slack_off.workspace import Workspace
 
+logger = logging.getLogger(__name__)
+
 
 def create_workspace(client, name: str, user_id: str) -> Workspace:
-    result = client.conversations_create(name=name, is_private=True)
-    channel_id = result["channel"]["id"]
-    client.conversations_invite(channel=channel_id, users=user_id)
+    # Create the sandbox first: it's the most failure-prone step (auth, e2b
+    # availability). Doing it before creating the Slack channel means a failure
+    # here leaves nothing to clean up, rather than orphaning a channel whose name
+    # then stays reserved on Slack.
     sandbox_id = create_sandbox()
-    return save_workspace(name, channel_id, user_id, sandbox_id=sandbox_id, sandbox_state=RUNNING)
+
+    channel_id = None
+    try:
+        result = client.conversations_create(name=name, is_private=True)
+        channel_id = result["channel"]["id"]
+        client.conversations_invite(channel=channel_id, users=user_id)
+        return save_workspace(
+            name, channel_id, user_id, sandbox_id=sandbox_id, sandbox_state=RUNNING
+        )
+    except Exception:
+        # Roll back so we don't leak a sandbox (or an orphaned channel) when a
+        # later step fails (e.g. name_taken, invite error).
+        if channel_id is not None:
+            try:
+                client.conversations_archive(channel=channel_id)
+            except Exception:
+                logger.warning("Failed to archive channel %s during rollback", channel_id)
+        try:
+            kill_sandbox(sandbox_id)
+        except Exception:
+            logger.warning("Failed to kill sandbox %s during rollback", sandbox_id)
+        raise
 
 
 def delete_workspace(client, name: str, user_id: str) -> bool:

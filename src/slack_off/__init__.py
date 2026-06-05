@@ -55,6 +55,10 @@ def handle_create_workspace_modal(ack, body, client):
             ack(response_action="errors", errors={"workspace_name_block": f"A workspace named '{workspace_name}' already exists."})
             return
         raise
+    except Exception:
+        logging.exception("Failed to create workspace '%s'", workspace_name)
+        ack(response_action="errors", errors={"workspace_name_block": "Could not create the workspace's sandbox. Please try again later."})
+        return
 
     ack()
     _publish_home(client, user_id)
@@ -90,6 +94,9 @@ def new_workspace(ack, respond, command, client):
             respond(f"A workspace named '{workspace_name}' already exists.")
         else:
             raise
+    except Exception:
+        logging.exception("Failed to create workspace '%s'", workspace_name)
+        respond("Could not create the workspace's sandbox. Please try again later.")
 
 
 _PAUSE_MESSAGES = {
