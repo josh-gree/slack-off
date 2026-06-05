@@ -94,6 +94,27 @@ def test_resume_sets_state_running(monkeypatch):
     assert get_workspace("proj", "U1").sandbox_state == RUNNING
 
 
+def test_status_reports_state(monkeypatch):
+    monkeypatch.setattr(ops, "create_sandbox", lambda: "sbx_1")
+    monkeypatch.setattr(ops, "pause_sandbox", lambda sid: None)
+
+    ops.create_workspace(_slack_client("C1"), "proj", "U1")
+    assert ops.get_workspace_sandbox_status("C1", "U1") == RUNNING
+
+    ops.pause_workspace_sandbox("C1", "U1")
+    assert ops.get_workspace_sandbox_status("C1", "U1") == PAUSED
+
+
+def test_status_is_owner_only(monkeypatch):
+    monkeypatch.setattr(ops, "create_sandbox", lambda: "sbx_1")
+    ops.create_workspace(_slack_client("C1"), "proj", "U1")
+    assert ops.get_workspace_sandbox_status("C1", "U2") == "not_owner"
+
+
+def test_status_outside_workspace_channel():
+    assert ops.get_workspace_sandbox_status("C-unknown", "U1") == "not_a_workspace"
+
+
 def test_pause_outside_workspace_channel():
     assert ops.pause_workspace_sandbox("C-unknown", "U1") == "not_a_workspace"
 

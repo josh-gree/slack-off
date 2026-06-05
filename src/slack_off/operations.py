@@ -104,3 +104,17 @@ def resume_workspace_sandbox(channel_id: str, user_id: str) -> str:
     resume_sandbox(workspace.sandbox_id)
     set_sandbox_state(workspace.id, RUNNING)
     return "resumed"
+
+
+def get_workspace_sandbox_status(channel_id: str, user_id: str) -> str:
+    """Return the tracked sandbox state for a workspace channel. Owner-only.
+
+    Returns the sandbox state (e.g. 'running', 'paused') on success, or one of the
+    reason strings 'not_a_workspace', 'not_owner', or 'no_sandbox'.
+    """
+    workspace, reason = _resolve_owned_workspace(channel_id, user_id)
+    if reason:
+        return reason
+    if not workspace.sandbox_id:
+        return "no_sandbox"
+    return workspace.sandbox_state or "unknown"
