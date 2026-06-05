@@ -56,3 +56,21 @@ def kill_sandbox(sandbox_id: str) -> None:
 
     Sandbox.kill(sandbox_id)
     logger.info("Killed sandbox %s", sandbox_id)
+
+
+def get_sandbox_state(sandbox_id: str) -> str:
+    """Query e2b for a sandbox's real state without resuming it.
+
+    Returns RUNNING, PAUSED, or KILLED (when the sandbox no longer exists).
+    Uses Sandbox.list() because connecting to a paused sandbox would resume it.
+    """
+    from e2b import Sandbox, SandboxQuery, SandboxState
+
+    paginator = Sandbox.list(
+        query=SandboxQuery(state=[SandboxState.RUNNING, SandboxState.PAUSED]),
+    )
+    while paginator.has_next:
+        for item in paginator.next_items():
+            if item.sandbox_id == sandbox_id:
+                return RUNNING if item.state == SandboxState.RUNNING else PAUSED
+    return KILLED
